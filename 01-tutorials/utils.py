@@ -201,22 +201,13 @@ def create_agentcore_role(agent_name):
         # Pause to make sure role is created
         time.sleep(10)
     except iam_client.exceptions.EntityAlreadyExistsException:
-        print("Role already exists -- deleting and creating it again")
-        policies = iam_client.list_role_policies(
-            RoleName=agentcore_role_name, MaxItems=100
-        )
-        print("policies:", policies)
-        for policy_name in policies["PolicyNames"]:
-            iam_client.delete_role_policy(
-                RoleName=agentcore_role_name, PolicyName=policy_name
-            )
-        print(f"deleting {agentcore_role_name}")
-        iam_client.delete_role(RoleName=agentcore_role_name)
-        print(f"recreating {agentcore_role_name}")
-        agentcore_iam_role = iam_client.create_role(
-            RoleName=agentcore_role_name,
-            AssumeRolePolicyDocument=assume_role_policy_document_json,
-        )
+        print(f"✓ Role '{agentcore_role_name}' already exists - reusing it")
+        try:
+            agentcore_iam_role = iam_client.get_role(RoleName=agentcore_role_name)
+            print(f"✓ Retrieved existing role: {agentcore_role_name}")
+        except Exception as e:
+            print(f"⚠️  Could not retrieve existing role: {e}")
+            raise
 
     # Attach the AWSLambdaBasicExecutionRole policy
     print(f"attaching role policy {agentcore_role_name}")
@@ -226,7 +217,16 @@ def create_agentcore_role(agent_name):
             PolicyName="AgentCorePolicy",
             RoleName=agentcore_role_name,
         )
+        print(f"✓ Policy 'AgentCorePolicy' attached to {agentcore_role_name}")
+    except iam_client.exceptions.ClientError as e:
+        if e.response['Error']['Code'] == 'AccessDenied':
+            print(f"⚠️  Permission denied attaching policy (AccessDenied)")
+            print(f"   This is OK if the role and policy already exist")
+            print(f"   Ask your AWS admin to ensure the role has Bedrock permissions")
+        else:
+            print(f"Error attaching policy: {e}")
+            raise
     except Exception as e:
-        print(e)
+        print(f"Error attaching policy: {e}")
 
     return agentcore_iam_role
